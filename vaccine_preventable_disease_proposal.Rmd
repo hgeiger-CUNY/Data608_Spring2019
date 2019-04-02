@@ -1,0 +1,70 @@
+# About this data
+
+This data is available from the following link:
+
+https://data.chhs.ca.gov/dataset/vaccine-preventable-disease-cases-by-county-and-year
+
+From the website:
+
+"These data contain counts of Immunization Branch-related disease cases among California residents by county, disease, and year.
+
+The California Department of Public Health (CDPH) maintains a mandatory, passive reporting system for a list of communicable disease cases and outbreaks. The CDPH Immunization Branch conducts surveillance for vaccine preventable diseases. Health care providers and laboratories are mandated to report cases or suspected cases of these communicable diseases to their local health department (LHD). LHDs are also mandated to report these cases to CDPH."
+
+We also find from the data dictionary that the data includes 59 counties (58 actual counties in California, plus one listing for California state-wide total).
+
+Totals across counties will almost always match up to statewide totals, except in one case where one case was listed as just "California" because the exact county was unknown.
+
+Diseases include: Diphtheria, Hepatitis A, Hepatitis B, acute, Hepatitis C, acute, Invasive Meningococcal Disease, Measles, Mumps, Pertussis, Rubella, Tetanus, and Varicella Hospitalizations.
+
+Data spans 2001-2017 overall. However, mumps, rubella, and varicella hospitalizations were not measured in this dataset until 2010, while all three forms of hepatitis were not measured until 2011.
+
+Finally, what counts as a case of the disease varies by disease. Full definitions of what resolution statuses count as a case:
+
+Diphtheria: Confirmed and Probable
+Hepatitis A: Confirmed
+Hepaitis B, Acute: Confirmed
+Hepatitis C, Acute: Confirmed (2011-2016), Confirmed and Probable (2017)
+Invasive Meningococcal Disease: Confirmed and Probable
+Measles: Confirmed
+Mumps: Confirmed and Probable
+Pertussis: Confirmed, Probable, and Suspect
+Rubella: Confirmed
+Tetanus: Probable
+Varicella Hospitalizations: Confirmed and Probable
+
+# Read in data and initial exploration
+
+Read in data, which is in CSV format.
+
+```{r}
+data <- read.csv("izb_odp_final_03262019.csv",header=TRUE,stringsAsFactors=FALSE)
+```
+
+Look at first few rows of data.
+
+```{r}
+head(data)
+```
+
+Separate out county=California from the rest of the data.
+
+```{r}
+statewide <- data[data$county == "California",]
+
+data <- data[data$county != "California",]
+```
+
+Confirm that totals for remaining 58 counties match those of California, except in the one instance where they should be one off.
+
+```{r}
+county_totals <- aggregate(count ~ disease + year,FUN=sum,data=data)
+county_totals <- county_totals[order(county_totals$disease,county_totals$year),]
+
+nrow(county_totals)
+length(which(county_totals$count == statewide$count))
+
+county_totals[county_totals$count != statewide$count,]
+statewide[county_totals$count != statewide$count,]
+```
+
+
