@@ -1,0 +1,345 @@
+---
+title: Visualizing vaccine preventable disease (VPD) cases vs. vaccination rates in California
+subtitle: CUNY Data 608 final project
+author: Heather Geiger
+date: May 14, 2019
+output:
+ html_document:
+  smart: false
+  code_folding: hide
+  toc: true
+  toc_depth: 3
+---
+
+# Background
+
+The 20th century saw great reductions in incidences of diseases such as polio through the use of vaccines as a preventative measure.
+
+Unfortunately, in the 21st century we are now seeing a reemergence of vaccine-preventable diseases as the anti-vaccination movement gains more traction in certain segments of society.
+
+This is a major problem for public health.
+
+California has very detailed publicly available data on both rates of vaccine-preventable diseases as well as immunization rates, which here will be juxtaposed visually.
+
+The first dataset has the number of cases of different vaccine-preventable diseases (including diptheria, pertussis, etc.) across the state by county and year. This dataset spans from 2001-2017.
+
+The second dataset has for all schools with 10+ students, the number of kindergarteners who have received different vaccines, as well as the number of kindergarteners with medical or religious/personal belief exemptions. This dataset spans from the 2013-2014 through 2017-2018 school years.
+
+# Data
+
+## Main data
+
+### Vaccine-preventable disease cases
+
+This data is available from the following link:
+
+https://data.chhs.ca.gov/dataset/vaccine-preventable-disease-cases-by-county-and-year
+
+I also have a copy of the CSV file used in this analysis available at my Github here:
+
+https://raw.githubusercontent.com/hgeiger-CUNY/Data608_Spring2019/master/izb_odp_final_03262019.csv
+
+From the website:
+
+“These data contain counts of Immunization Branch-related disease cases among California residents by county, disease, and year.
+
+The California Department of Public Health (CDPH) maintains a mandatory, passive reporting system for a list of communicable disease cases and outbreaks. The CDPH Immunization Branch conducts surveillance for vaccine preventable diseases. Health care providers and laboratories are mandated to report cases or suspected cases of these communicable diseases to their local health department (LHD). LHDs are also mandated to report these cases to CDPH."
+
+This dataset contains information on all 58 counties in California, plus a statewide total across all counties.
+
+Diseases include: Diphtheria, Hepatitis A, Hepatitis B, acute, Hepatitis C, acute, Invasive Meningococcal Disease, Measles, Mumps, Pertussis, Rubella, Tetanus, and Varicella Hospitalizations.
+
+Data spans 2001-2017 overall. However, mumps, rubella, and varicella hospitalizations were not measured in this dataset until 2010, while all three forms of hepatitis were not measured until 2011.
+
+### Immunization rates
+
+Data available here:
+
+https://data.chhs.ca.gov/dataset/school-immunizations-in-kindergarten-by-academic-year
+
+I also have a copy of the CSV file used in this analysis, subsetted for the 2013-2014 school year, available at my Github here:
+
+https://raw.githubusercontent.com/hgeiger-CUNY/Data608_Spring2019/master/school_immunizations_in_kindergarten_by_academic_year_2013_2014_school_year.csv
+
+From the website:
+
+"This dataset contains immunization status of kindergarten students in California in schools. Explanation of the different immunizations is in the attached data dictionary. The California Health and Safety Code Section 120325-75 requires students to provide proof of immunization for school and child care entry. Additionally, California Health and Safety Code Section 120375 and California Code of Regulation Section 6075 require all schools and child care facilities to assess and report annually the immunization status of their enrollees.
+
+The annual kindergarten assessment is conducted each fall to monitor compliance with the California School Immunization law. Results from this assessment are used to measure immunization coverage among students entering kindergarten. Not all schools reported. This data set presents results from the kindergarten assessment and immunization coverage in kindergarten schools by county."
+
+In the 2013-2014 and 2014-2015 school years, parents were allowed to send their children to school unvaccinated for non-medical reasons, known as a "personal belief exemption". From the 2015-2016 school years onward, only medical exemptions were allowed, and the overall rate of exemptions of any kind decreased drastically (https://www.latimes.com/science/sciencenow/la-sci-sn-vaccine-medical-exemptions-20181029-story.html).
+
+Since this data does not go back far enough to allow much of a comparison over time vs. the vaccine-preventable disease incidence data, I will limit my use of this data to a single school year (2013-2014).
+
+And I will focus on personal belief exemptions specifically.
+
+The immunization rate data is more granular than the disease case data. With a simple reference to Google Maps, it would be possible to map the exact geographic coordinates of schools with high rates of personal belief exemptions. However, we can't do much with this information if the goal is to compare vs. cases of VPDs, since those are only available at the county level. Therefore, I will aggregate at the county level to get a rate of kindergarteners with personal belief exemptions county-wide.
+
+## Supplementary data
+
+### Population estimates
+
+Estimates of population per county are available here:
+
+http://www.dof.ca.gov/Forecasting/Demographics/Estimates/
+
+In this report I will use the July estimates as the estimate for that year. For 2010, I will use the estimates from the 2010-2018 sheet.
+
+I will be using the sheet listed under section E-2.
+
+This data is available for 2001-2017 in CSV format here:
+
+https://raw.githubusercontent.com/hgeiger-CUNY/Data608_Spring2019/master/California_county_populations_2001_to_2017.csv
+
+### California county geographic boundaries
+
+Available here:
+
+https://data.ca.gov/dataset/ca-geographic-boundaries
+
+# Libraries
+
+Load libraries required for analysis and visualization.
+
+```{r,message=FALSE,warning=FALSE}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(gridExtra)
+library(rgdal)
+library(rgeos)
+library(RColorBrewer)
+library(scales)
+```
+
+# Analysis
+
+Read in data.
+
+```{r}
+mydata <- read.csv("https://raw.githubusercontent.com/hgeiger-CUNY/Data608_Spring2019/master/izb_odp_final_03262019.csv",header=TRUE,stringsAsFactors=FALSE)
+
+#Separate lines where county="California" (statewide totals) from the remainder of the data.
+
+statewide_totals <- mydata[mydata$county == "California",]
+mydata <- mydata[mydata$county != "California",]
+```
+
+Let's start with a simple look at the number of cases per disease, over the whole time span.
+
+```{r}
+sum_per_var <- mydata %>% group_by(disease) %>% summarise(total = sum(count))
+sum_per_var <- data.frame(sum_per_var,stringsAsFactors=FALSE)
+
+sum_per_var[,1] <- factor(sum_per_var[,1],levels=as.vector(sum_per_var[,1])[order(sum_per_var[,2])])
+
+ggplot(sum_per_var,
+        aes(x=disease,y=total)) +
+        geom_bar(stat="identity",fill="lightgrey",col="black") +
+        ylab("Total cases") +
+        xlab("") +
+		ggtitle("Statewide cases of vaccine-preventable diseases (VPDs)\nTotal 2001-2017") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+		coord_flip()
+```
+
+Pertussis makes up the overwhelming majority of cases. So, it seems like just looking at the sum of cases for all VPDs together is the best approach. Let's proceed that way for the remainder of the analysis.
+
+Plot by year and by county for all VPDs combined.
+
+```{r}
+sum_per_var <- statewide_totals %>% group_by(year) %>% summarise(total = sum(count))
+
+ggplot(sum_per_var,
+	aes(x=year,y=total)) +
+	geom_point(shape=21) +
+	geom_line() +
+	xlab("Year") +
+	ylab("Total cases") +
+	ggtitle("Statewide cases of all VPDs, 2001-2017")
+```
+
+```{r}
+sum_per_var <- mydata %>% group_by(county) %>% summarise(total = sum(count))
+sum_per_var <- data.frame(sum_per_var,stringsAsFactors=FALSE)
+sum_per_var$county <- as.vector(sum_per_var$county)
+
+sum_per_var <- sum_per_var[order(sum_per_var$total,decreasing=TRUE),]
+sum_per_var <- sum_per_var[1:20,]
+
+sum_per_var$county <- factor(sum_per_var$county,levels=rev(sum_per_var$county))
+
+ggplot(sum_per_var,
+	aes(x=county,y=total)) +
+	geom_bar(stat="identity",fill="lightgrey",col="black") +
+    ylab("Total cases") +
+    xlab("") +
+    ggtitle("Statewide cases of all VPDs in top 20 counties, 2001-2017") +
+	coord_flip()
+```
+
+Top counties are generally highly populated (e.g. Los Angeles).
+
+This highlights the need to normalize by population.
+
+Let's get the cases per county per year as a rate per 10,000 residents.
+
+```{r}
+population <- read.csv("https://raw.githubusercontent.com/hgeiger-CUNY/Data608_Spring2019/master/California_county_populations_2001_to_2017.csv",header=TRUE,check.names=FALSE,stringsAsFactors=FALSE)
+colnames(population)[1] <- "county"
+
+population <- population[population$county != "California",]
+
+population <- gather(population,key="year",value="population",-county)
+
+population$year <- as.numeric(population$year)
+
+mydata <- mydata %>% group_by(county,year) %>% summarise(cases = sum(count))
+
+mydata <- merge(mydata,population,by=c("county","year"))
+
+mydata <- mydata %>% mutate(cases.per.10k = cases/(population/10000))
+```
+
+For each year, plot the median cases per 10,000 residents rate across the 58 counties.
+
+If we still see increases in 2010 and 2014, that would suggest that the increase in VPD cases was a trend across multiple counties. Whereas if the trend in this plot is relatively flat, it would instead suggest that the increase in VPD cases may have come from one or two very populous counties.
+
+```{r}
+median_normalized_case_rate_per_year <- mydata %>% group_by(year) %>% summarise(median.cases.per.10k = median(cases.per.10k))
+
+ggplot(median_normalized_case_rate_per_year,
+	aes(x=year,y=median.cases.per.10k)) +
+	geom_line() +
+	geom_point(shape=21) +
+	xlab("Year") +
+	ylab("Median yearly countywide VPD cases per 10k residents")
+```
+
+Looks like after normalizing for county population differences, we still see huge spikes in VPD cases in 2010 and 2014 across multiple counties.
+
+For the remainder of the analysis, I will focus on the incidence of VPDs in these years specifically. These years (especially 2014) are also an ideal focus point since they are relatively close to the 2013-2014 school year time point for which we have immunization data.
+
+Read in California geographic boundaries. Then, match up to VPD case data from 2010 and 2014.
+
+```{r,message=FALSE,warning=FALSE,results='hide',cache=TRUE}
+regions_OGR <- readOGR(dsn="CA_Counties")
+map_regions <- spTransform(regions_OGR,CRS("+proj=longlat +datum=WGS84"))
+
+map_regions_fortified <- fortify(map_regions)
+
+map_regions_fortified <- merge(map_regions_fortified,data.frame(id = rownames(map_regions@data),county = map_regions$NAME),by="id")
+```
+
+Visualize yearly VPD cases per 10,000 residents in 2010 and 2014 as a heatmap for each year.
+
+In counties with 50,000 residents, a relatively small number of cases may lead to a very large rate. So exclude coloring for these counties.
+
+Also, label all counties with high incidence rates in either year (5+ yearly cases per 10,000 residents) and/or high overall populations (1 million+ residents in 2014).
+
+```{r,message=FALSE,warning=FALSE}
+yearly_cases_per_county_select_years <- mydata[mydata$year %in% c(2010,2014),]
+
+yearly_cases_per_county_select_years[yearly_cases_per_county_select_years$population < 50000,"cases.per.10k"] <- NA #I checked and the same counties with population < 50,000 are found using either 2010 or 2014 population.
+```
+
+```{r,message=FALSE,warning=FALSE}
+county_centroids <- getSpPPolygonsLabptSlots(map_regions)
+
+county_centroids <- data.frame(long = county_centroids[,1],lat = county_centroids[,2],county = map_regions$NAME,row.names=map_regions$NAME,group = as.numeric(rownames(map_regions@data)) + 0.1,cases.per.10k = rep(0,times=58),stringsAsFactors=FALSE)
+
+county_centroids$group <- factor(county_centroids$group,levels=levels(map_regions_fortified$group))
+
+colnames(county_centroids)[ncol(county_centroids)] <- "Yearly VPD cases/10k residents"
+```
+
+```{r}
+rate_5plus <- unique(yearly_cases_per_county_select_years$county[which(yearly_cases_per_county_select_years$cases.per.10k >= 5 & is.na(yearly_cases_per_county_select_years$cases.per.10k) == FALSE)])
+pop_1M_plus <- unique(yearly_cases_per_county_select_years$county[yearly_cases_per_county_select_years$population >= 1e6])
+
+to_highlight <- unique(c(rate_5plus,pop_1M_plus))
+
+to_highlight_coords <- county_centroids[to_highlight,]
+```
+
+```{r,message=FALSE,warning=FALSE}
+map_regions_fortified_add_data <- merge(map_regions_fortified,yearly_cases_per_county_select_years,by="county")
+colnames(map_regions_fortified_add_data)[colnames(map_regions_fortified_add_data) == "cases.per.10k"] <- "Yearly VPD cases/10k residents"
+```
+
+```{r}
+blue_yellow_red_gradient <- colorRampPalette(rev(brewer.pal(n = 7, name ="RdYlBu")))(100)
+```
+
+```{r,message=FALSE,warning=FALSE,eval=FALSE,echo=FALSE}
+ggplot(map_regions_fortified_add_data,
+	aes(x = long,y = lat,group = group,fill=`Yearly VPD cases/10k residents`)) +
+	geom_polygon(colour="black") +
+	xlab("") +
+	ylab("") +
+	theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks.x = element_blank(),axis.ticks.y = element_blank(),axis.text.x = element_blank(),axis.text.y = element_blank()) +
+	scale_fill_gradientn(colours = blue_yellow_red_gradient,limits=c(0,10),oob=squish) +
+	facet_wrap(~year,nrow=1) +
+	ggtitle("Exclude counties with <50,000 residents")
+```
+
+```{r,message=FALSE,warning=FALSE,fig.width=8,fig.height=8,eval=FALSE}
+ggplot(map_regions_fortified_add_data,
+    aes(x = long,y = lat,group = group,fill=`Yearly VPD cases/10k residents`)) +
+    geom_polygon(colour="black") +
+    xlab("") +
+    ylab("") +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks.x = element_blank(),axis.ticks.y = element_blank(),axis.text.x = element_blank(),axis.text.y = element_blank()) +
+    scale_fill_gradientn(colours = blue_yellow_red_gradient,limits=c(0,10),oob=squish) +
+    facet_wrap(~year,nrow=1) +
+    ggtitle("Exclude counties with <50,000 residents") +
+	geom_text(data=to_highlight_coords,aes(label = county,x = long,y = lat),size=1.5,fontface = "bold")
+```
+
+Read in data on immunization rates from the 2013-2014 school year.
+
+Remove schools with a blank for enrollment, which means there is no data because there are less than 10 students.
+
+Then, focus on counts for enrollment vs. PBE (personal belief exemption).
+
+```{r}
+immunizations <- read.csv("https://raw.githubusercontent.com/hgeiger-CUNY/Data608_Spring2019/master/school_immunizations_in_kindergarten_by_academic_year_2013_2014_school_year.csv",header=TRUE,stringsAsFactors=FALSE)
+
+immunizations <- immunizations[which(is.na(immunizations$Enrollment) == FALSE),]
+
+immunizations$Count <- as.numeric(immunizations$Count)
+
+immunizations <- spread(immunizations[,setdiff(colnames(immunizations),"Percent")],key="Category",value="Count")
+
+immunizations <- immunizations[,c(colnames(immunizations)[1:10],"PBE")]
+```
+
+Summarize PBE rates by county.
+
+```{r}
+colnames(immunizations)[3] <- "county"
+
+immunizations <- immunizations %>% group_by(county)  %>% summarise(total_enrolled = sum(Enrollment),total_PBE = sum(PBE)) %>% mutate(PBE_percent_enrolled = total_PBE*100/total_enrolled)
+
+immunizations <- data.frame(immunizations,stringsAsFactors=FALSE)
+```
+
+Combine with population estimates. Let's use 2013.
+
+```{r}
+pop2013 <- population[population$year == 2013,c("county","population")]
+
+pop2013$county <- toupper(pop2013$county)
+
+immunizations <- merge(immunizations,pop2013,by="county")
+```
+
+Again, NA out low population counties.
+
+```{r}
+immunizations$PBE_percent_enrolled[immunizations$population < 50000] <- NA
+```
